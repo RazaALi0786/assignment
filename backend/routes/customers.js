@@ -9,9 +9,17 @@ router.get("/", async (req, res) => {
 
   try {
     const result = await db.query(
-      "SELECT * FROM users ORDER BY id LIMIT $1 OFFSET $2",
+      `
+      SELECT u.*, COUNT(o.order_id) AS order_count
+      FROM users u
+      LEFT JOIN orders o ON u.id = o.user_id
+      GROUP BY u.id
+      ORDER BY u.id
+      LIMIT $1 OFFSET $2
+      `,
       [limit, offset]
     );
+
     res.json({ success: true, data: result.rows });
   } catch (err) {
     res.status(500).json({
@@ -62,6 +70,61 @@ router.get("/:id", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Error fetching customer",
+      error: err.message,
+    });
+  }
+});
+
+router.get("/top", async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT u.id, u.first_name, u.last_name, COUNT(o.order_id) AS order_count
+      FROM users u
+      JOIN orders o ON u.id = o.user_id
+      GROUP BY u.id
+      ORDER BY order_count DESC
+      LIMIT 10
+    `);
+
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: "Error fetching top customers",
+      error: err.message,
+    });
+  }
+});
+
+router.get("/:id/summary", async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const customer = await db.query("SELECT * FROM users WHERE id = $1", [id]);
+
+    if (customer.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Customer not found" });
+    }
+
+    const orders = await db.query(
+      "SELECT * FROM orders WHERE user_id = $1 ORDER BY created_at DESC",
+      [id]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        ...customer.rows[0],
+        orders: orders.rows,
+        order_count: orders.rows.length,
+      },
+    });
+  } catch (err) {
+    res.status(500).json({
+      success: false,
+      message: "Error fetching customer summary",
       error: err.message,
     });
   }
